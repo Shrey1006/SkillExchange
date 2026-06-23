@@ -5,6 +5,7 @@ import Navbar from "../components/Navbar";
 import Footer from "../components/footer";
 import Button from "../components/ui/Button";
 import Card from "../components/ui/Card";
+import ResourceThumb from "../components/ResourceThumb";
 import "./mypurchase.css";
 import "./AppPages.css";
 
@@ -66,7 +67,7 @@ export default function MyPurchase() {
         <div className="resource-grid">
           {videos.map((v) => (
             <Card key={v._id} className="resource-card">
-              <div className="resource-thumb" />
+              <ResourceThumb item={v} />
               <div className="resource-body">
                 <h3 className="resource-title">{v.title}</h3>
                 <p className="resource-desc">{v.description}</p>
@@ -84,7 +85,7 @@ export default function MyPurchase() {
           <div className="resource-grid">
             {docs.map((d) => (
               <Card key={d._id} className="resource-card">
-                <div className="resource-thumb notes-thumb">Notes</div>
+                <ResourceThumb item={d} type="notes" />
                 <div className="resource-body">
                   <h3 className="resource-title">{d.title}</h3>
                   <div className="resource-row">

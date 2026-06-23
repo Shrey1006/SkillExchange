@@ -5,6 +5,7 @@ import Navbar from "../components/Navbar";
 import Footer from "../components/footer";
 import Button from "../components/ui/Button";
 import Card from "../components/ui/Card";
+import ResourceThumb from "../components/ResourceThumb";
 import "./Dashboard.css";
 import "./AppPages.css";
 
@@ -67,7 +68,7 @@ export default function Dashboard() {
             <div className="resource-grid">
               {videos.map((v) => (
                 <Card key={v._id} className="resource-card">
-                  <div className="resource-thumb" />
+                  <ResourceThumb item={v} />
                   <div className="resource-body">
                     <h3 className="resource-title">{v.title}</h3>
                     <p className="resource-desc">{v.description}</p>
@@ -90,7 +91,7 @@ export default function Dashboard() {
             <div className="resource-grid">
               {notes.map((n) => (
                 <Card key={n._id} className="resource-card">
-                  <div className="resource-thumb notes-thumb">Notes</div>
+                  <ResourceThumb item={n} type="notes" />
                   <div className="resource-body">
                     <h3 className="resource-title">{n.title}</h3>
                     <div className="resource-row">

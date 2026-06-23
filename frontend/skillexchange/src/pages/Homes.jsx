@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import Footer from "../components/footer";
 import Card from "../components/ui/Card";
+import ResourceThumb from "../components/ResourceThumb";
 import "./AppPages.css";
 
 export default function Home() {
@@ -25,7 +26,7 @@ export default function Home() {
         <div className="resource-grid">
           {videos.map((v) => (
             <Card key={v._id} className="resource-card">
-              <div className="resource-thumb" />
+              <ResourceThumb item={v} />
               <div className="resource-body">
                 <h3 className="resource-title">{v.title}</h3>
                 <p className="resource-desc">{v.description}</p>

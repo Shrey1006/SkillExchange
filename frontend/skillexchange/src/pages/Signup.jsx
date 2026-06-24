@@ -2,7 +2,7 @@ import { useState } from "react";
 import API from "../api";
 import "./AuthCSS.css";
 import { Link, useNavigate } from "react-router-dom";
-import Logo from "../assets/logo.png";
+import Logo from "../assets/Logo.png";
 import Input from "../components/ui/Input";
 import Button from "../components/ui/Button";
 import Card from "../components/ui/Card";

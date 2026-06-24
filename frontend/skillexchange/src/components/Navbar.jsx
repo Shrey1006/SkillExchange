@@ -1,6 +1,6 @@
 import Profile from "../assets/profile.svg";
 import "./Navbar.css";
-import Logo from "../assets/logo.png";
+import Logo from "../assets/Logo.png";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import Button from "./ui/Button";
 import { useTheme } from "../context/ThemeContext";

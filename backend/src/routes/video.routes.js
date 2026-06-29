@@ -4,26 +4,11 @@ import auth from "../middlewares/auth.js";
 import Video from "../models/video.model.js";
 import User from "../models/user.model.js";
 import Access from "../models/access.model.js";
-import {
-  buildUploadPath,
-  ensureUploadDir,
-  videosUploadDir,
-} from "../utils/uploadPaths.js";
+import { uploadToCloudinary } from "../utils/cloudinary.js";
 
 const router = express.Router();
 
-// 🔹 MULTER STORAGE
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, ensureUploadDir(videosUploadDir));
-  },
-
-  filename: (req, file, cb) => {
-    cb(null, Date.now() + "-" + file.originalname);
-  }
-});
-
-const upload = multer({ storage });
+const upload = multer({ storage: multer.memoryStorage() });
 
 //  PUBLIC FEED
 router.get("/", async (req, res) => {
@@ -58,18 +43,29 @@ router.post("/", auth, upload.single("video"), async (req, res) => {
     }
 
     if (!req.file) {
-      return res.status(400).json({ message: "Please choose a video file to upload" });
+      return res
+        .status(400)
+        .json({ message: "Please choose a video file to upload" });
     }
 
     const parsedCost = Number(cost);
-    const safeCost = Number.isFinite(parsedCost) && parsedCost > 0 ? Math.floor(parsedCost) : 5;
+    const safeCost =
+      Number.isFinite(parsedCost) && parsedCost > 0
+        ? Math.floor(parsedCost)
+        : 5;
+
+    const result = await uploadToCloudinary(req.file.buffer, {
+      folder: "skill-exchange/videos",
+      resource_type: "video",
+      public_id: `${Date.now()}-${req.file.originalname.replace(/\.[^.]+$/, "")}`,
+    });
 
     await Video.create({
       title: title.trim(),
       description: description?.trim?.() || "",
       cost: safeCost,
-      filepath: buildUploadPath("uploads", "videos", req.file.filename),
-      filename: req.file.filename,
+      filepath: result.secure_url,
+      filename: req.file.originalname,
       uploadedBy: req.userId,
       uploadedby: req.userId,
     });
@@ -77,12 +73,12 @@ router.post("/", auth, upload.single("video"), async (req, res) => {
     const user = await User.findByIdAndUpdate(
       req.userId,
       { $inc: { credits: 30 } },
-      { new: true }
+      { new: true },
     );
 
     return res.json({
       credits: user?.credits ?? 0,
-      message: "Video uploaded!"
+      message: "Video uploaded!",
     });
   } catch (err) {
     console.error("Video upload error:", err);
@@ -90,10 +86,8 @@ router.post("/", auth, upload.single("video"), async (req, res) => {
   }
 });
 
-
 //  WATCH WITH CREDITS
 router.post("/watch/:id", auth, async (req, res) => {
-
   const user = await User.findById(req.userId);
   const video = await Video.findById(req.params.id);
   if (!video) return res.status(404).json({ message: "Video not found" });
@@ -111,15 +105,17 @@ router.post("/watch/:id", auth, async (req, res) => {
   //  CHECK IF ALREADY PURCHASED
   const already = await Access.findOne({
     userId: req.userId,
-    videoId: video._id
+    videoId: video._id,
   });
 
   if (already) {
-    await User.findByIdAndUpdate(req.userId, { $addToSet: { purchasedSkills: video._id } });
+    await User.findByIdAndUpdate(req.userId, {
+      $addToSet: { purchasedSkills: video._id },
+    });
     // allow without deduction
     return res.json({
       path: videoPath,
-      credits: user.credits
+      credits: user.credits,
     });
   }
 
@@ -130,17 +126,19 @@ router.post("/watch/:id", auth, async (req, res) => {
 
   user.credits -= video.cost;
   await user.save();
-  await User.findByIdAndUpdate(req.userId, { $addToSet: { purchasedSkills: video._id } });
+  await User.findByIdAndUpdate(req.userId, {
+    $addToSet: { purchasedSkills: video._id },
+  });
 
   //SAVE ACCESS RECORD
   await Access.create({
     userId: req.userId,
-    videoId: video._id
+    videoId: video._id,
   });
 
   res.json({
     path: videoPath,
-    credits: user.credits
+    credits: user.credits,
   });
 });
 

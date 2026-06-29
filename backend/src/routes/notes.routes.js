@@ -7,25 +7,18 @@ import auth from "../middlewares/auth.js";
 import Notes from "../models/notes.model.js";
 import User from "../models/user.model.js";
 import NoteAccess from "../models/noteAccess.model.js";
-import {
-  buildUploadPath,
-  backendRoot,
-  ensureUploadDir,
-  notesUploadDir,
-} from "../utils/uploadPaths.js";
+import { uploadToCloudinary } from "../utils/cloudinary.js";
+
+const backendRoot = path.resolve(
+  path.dirname(new URL(import.meta.url).pathname),
+  "..",
+  "..",
+  "..",
+);
 
 const router = express.Router();
 
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, ensureUploadDir(notesUploadDir));
-  },
-  filename: (req, file, cb) => {
-    cb(null, `${Date.now()}-${file.originalname}`);
-  },
-});
-
-const upload = multer({ storage });
+const upload = multer({ storage: multer.memoryStorage() });
 
 router.post("/", auth, upload.single("notes"), async (req, res) => {
   try {
@@ -35,17 +28,28 @@ router.post("/", auth, upload.single("notes"), async (req, res) => {
     }
 
     if (!req.file) {
-      return res.status(400).json({ message: "Please choose a notes file to upload" });
+      return res
+        .status(400)
+        .json({ message: "Please choose a notes file to upload" });
     }
 
     const parsedCost = Number(cost);
-    const safeCost = Number.isFinite(parsedCost) && parsedCost > 0 ? Math.floor(parsedCost) : 3;
+    const safeCost =
+      Number.isFinite(parsedCost) && parsedCost > 0
+        ? Math.floor(parsedCost)
+        : 3;
+
+    const result = await uploadToCloudinary(req.file.buffer, {
+      folder: "skill-exchange/notes",
+      resource_type: "raw",
+      public_id: `${Date.now()}-${req.file.originalname.replace(/\.[^.]+$/, "")}`,
+    });
 
     const note = await Notes.create({
       title: title.trim(),
       cost: safeCost,
-      filepath: buildUploadPath("uploads", "notes", req.file.filename),
-      filename: req.file.filename,
+      filepath: result.secure_url,
+      filename: req.file.originalname,
       uploadedBy: req.userId,
     });
 
@@ -73,7 +77,10 @@ router.get("/", async (req, res) => {
 
 router.get("/:id", async (req, res) => {
   try {
-    const note = await Notes.findById(req.params.id).populate("uploadedBy", "name email");
+    const note = await Notes.findById(req.params.id).populate(
+      "uploadedBy",
+      "name email",
+    );
     if (!note) return res.status(404).json({ message: "Note not found" });
 
     const { filepath, ...safe } = note.toObject();
@@ -90,13 +97,33 @@ router.post("/download/:id", auth, async (req, res) => {
     if (!note) return res.status(404).json({ message: "Note not found" });
 
     const notePath = (note.filepath || "").replaceAll("\\", "/");
+    const isCloudinaryUrl = /^https?:\/\//i.test(notePath);
+
+    const isOwner = note.uploadedBy?.toString?.() === req.userId;
+
+    if (isCloudinaryUrl) {
+      const remoteResponse = await fetch(notePath);
+      if (!remoteResponse.ok) {
+        return res.status(404).json({ message: "File missing on server" });
+      }
+      const type =
+        mime.lookup(note.filename) ||
+        remoteResponse.headers.get("content-type") ||
+        "application/octet-stream";
+      res.setHeader("Content-Type", type);
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="${note.filename}"`,
+      );
+      res.setHeader("X-Remaining-Credits", user.credits);
+      return res.send(Buffer.from(await remoteResponse.arrayBuffer()));
+    }
+
     const absolutePath = path.resolve(backendRoot, notePath);
 
     if (!fs.existsSync(absolutePath)) {
       return res.status(404).json({ message: "File missing on server" });
     }
-
-    const isOwner = note.uploadedBy?.toString?.() === req.userId;
 
     if (isOwner) {
       const type = mime.lookup(note.filename) || "application/octet-stream";
@@ -110,13 +137,19 @@ router.post("/download/:id", auth, async (req, res) => {
       noteId: note._id,
     });
 
-    const purchased = user.purchasedDocs?.some((id) => String(id) === String(note._id));
+    const purchased = user.purchasedDocs?.some(
+      (id) => String(id) === String(note._id),
+    );
 
     if (!already && !purchased) {
-      return res.status(403).json({ message: "Please unlock these notes before downloading" });
+      return res
+        .status(403)
+        .json({ message: "Please unlock these notes before downloading" });
     }
 
-    await User.findByIdAndUpdate(req.userId, { $addToSet: { purchasedDocs: note._id } });
+    await User.findByIdAndUpdate(req.userId, {
+      $addToSet: { purchasedDocs: note._id },
+    });
 
     const type = mime.lookup(note.filename) || "application/octet-stream";
     res.setHeader("Content-Type", type);

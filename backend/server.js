@@ -59,11 +59,8 @@ if (fs.existsSync(frontendBuildPath)) {
   );
 
   // SPA fallback: serve index.html for all non-API, non-file routes
-  app.get("*", (req, res) => {
-    // Don't redirect API calls or actual files
-    if (!req.path.startsWith("/api") && !req.path.startsWith("/uploads")) {
-      res.sendFile(path.join(frontendBuildPath, "index.html"));
-    }
+  app.get(/^(?!\/api\/|\/uploads).*/, (req, res) => {
+    res.sendFile(path.join(frontendBuildPath, "index.html"));
   });
 }
 const PORT = process.env.PORT || 5000;

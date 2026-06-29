@@ -42,17 +42,28 @@ app.use("/api/auth", authroutes);
 app.use("/api/user", userroutes);
 app.use("/api/payments", paymentroutes);
 
-// Serve frontend static files in production
+// Serve frontend static files
 const frontendBuildPath = path.join(
   __dirname,
   "../frontend/skillexchange/dist",
 );
-if (process.env.NODE_ENV === "production" && fs.existsSync(frontendBuildPath)) {
-  app.use(express.static(frontendBuildPath));
 
-  // SPA fallback: serve index.html for all non-API routes
+// Try to serve frontend dist if it exists
+if (fs.existsSync(frontendBuildPath)) {
+  // Serve static assets
+  app.use(
+    express.static(frontendBuildPath, {
+      maxAge: "1d",
+      etag: false,
+    }),
+  );
+
+  // SPA fallback: serve index.html for all non-API, non-file routes
   app.get("*", (req, res) => {
-    res.sendFile(path.join(frontendBuildPath, "index.html"));
+    // Don't redirect API calls or actual files
+    if (!req.path.startsWith("/api") && !req.path.startsWith("/uploads")) {
+      res.sendFile(path.join(frontendBuildPath, "index.html"));
+    }
   });
 }
 const PORT = process.env.PORT || 5000;

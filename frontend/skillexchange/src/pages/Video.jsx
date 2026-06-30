@@ -42,6 +42,7 @@ export default function Video() {
   }, [id]);
 
   useEffect(() => {
+    let active = true;
     const loadAccess = async () => {
       if (!id || loadingUser) {
         return;
@@ -59,26 +60,31 @@ export default function Video() {
 
       try {
         const accessRes = await api.get(`/user/content-access/video/${id}`);
+        if (!active) return;
         const unlocked = Boolean(accessRes.data?.hasAccess);
         setHasAccess(unlocked);
         setIsOwner(Boolean(accessRes.data?.isOwner));
 
         if (unlocked) {
           const watchRes = await api.post(`/videos/watch/${id}`);
+          if (!active) return;
           setPath(resolveMediaUrl(watchRes.data.path));
           if (typeof watchRes.data.credits === "number") {
             updateCredits(watchRes.data.credits);
           }
         }
       } catch {
-        setHasAccess(false);
+        if (active) setHasAccess(false);
       } finally {
-        setCheckingAccess(false);
+        if (active) setCheckingAccess(false);
       }
     };
 
     loadAccess();
-  }, [id, loadingUser, user, updateCredits]);
+    return () => {
+      active = false;
+    };
+  }, [id, loadingUser, !!user, updateCredits]);
 
   const play = async () => {
     setLoading(true);

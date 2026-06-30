@@ -199,11 +199,9 @@ router.post("/unlock-content", auth, async (req, res) => {
         : isVideo
           ? 5
           : 3;
-    // Reward is randomized each new unlock.
-    // For cost=1, allow 0..1 so it is not always zero.
-    // For cost>1, keep 0..(cost-1) as designed.
-    const maxReward = cost > 1 ? cost - 1 : 1;
-    const rewarded = randomInt(0, maxReward + 1);
+    // Reward is randomized each new unlock, strictly less than half of the cost.
+    const maxReward = Math.ceil(cost / 2) - 1;
+    const rewarded = maxReward > 0 ? randomInt(0, maxReward + 1) : 0;
 
     const deductedUser = await User.findOneAndUpdate(
       {

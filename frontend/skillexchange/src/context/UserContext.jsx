@@ -34,7 +34,10 @@ export function UserProvider({ children }) {
 
   const updateCredits = useCallback((credits) => {
     if (typeof credits !== "number") return;
-    setUser((prev) => (prev ? { ...prev, credits } : prev));
+    setUser((prev) => {
+      if (prev && prev.credits === credits) return prev;
+      return prev ? { ...prev, credits } : prev;
+    });
   }, []);
 
   const value = useMemo(

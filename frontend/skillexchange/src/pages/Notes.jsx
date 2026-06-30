@@ -15,8 +15,10 @@ import "./AppPages.css";
 export default function Notes() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { user, refreshUser, updateCredits } = useUser();
+  const { user, refreshUser, updateCredits, loadingUser } = useUser();
   const [note, setNote] = useState(null);
+  const [hasAccess, setHasAccess] = useState(false);
+  const [checkingAccess, setCheckingAccess] = useState(true);
   const [loading, setLoading] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
@@ -34,6 +36,33 @@ export default function Notes() {
     };
     loadNote();
   }, [id]);
+
+  useEffect(() => {
+    const loadAccess = async () => {
+      if (!id || loadingUser) {
+        return;
+      }
+
+      setCheckingAccess(true);
+      setHasAccess(false);
+
+      if (!user) {
+        setCheckingAccess(false);
+        return;
+      }
+
+      try {
+        const accessRes = await api.get(`/user/content-access/doc/${id}`);
+        setHasAccess(Boolean(accessRes.data?.hasAccess));
+      } catch {
+        setHasAccess(false);
+      } finally {
+        setCheckingAccess(false);
+      }
+    };
+
+    loadAccess();
+  }, [id, loadingUser, user]);
 
   const downloadNote = async () => {
     const res = await api.post(`/notes/download/${id}`, {}, { responseType: "blob" });
@@ -68,6 +97,7 @@ export default function Notes() {
       }
       await refreshUser();
       await downloadNote();
+      setHasAccess(true);
       if (unlockRes.data?.rewardMessage) {
         setStatusMessage(unlockRes.data.rewardMessage);
       }
@@ -108,16 +138,26 @@ export default function Notes() {
             <h1 className="page-title">{note?.title || "Notes"}</h1>
             {note && <ResourcePublisher item={note} />}
             <p className="muted-text">
-              Unlock these notes to download the file. Credits are deducted only once for this
-              document.
+              {hasAccess
+                ? "You already unlocked these notes. Download again anytime without spending more credits."
+                : "Unlock these notes to download the file. Credits are deducted only once for this document."}
             </p>
-            <p className="notes-cost">{cost} credits</p>
+            {!hasAccess && <p className="notes-cost">{cost} credits</p>}
             {statusMessage && <p className="success-text">{statusMessage}</p>}
             {error && <p className="error-text">{error}</p>}
             <div className="notes-actions">
-              <Button onClick={() => setShowModal(true)} disabled={loading || !note}>
-                {loading ? "Processing..." : "Unlock & Download"}
-              </Button>
+              {hasAccess ? (
+                <Button onClick={downloadNote} disabled={loading || !note}>
+                  {loading ? "Downloading..." : "Download"}
+                </Button>
+              ) : (
+                <Button
+                  onClick={() => setShowModal(true)}
+                  disabled={loading || !note || checkingAccess}
+                >
+                  {loading ? "Processing..." : "Unlock & Download"}
+                </Button>
+              )}
               {error === "Insufficient Credits" && (
                 <Button variant="ghost" onClick={() => navigate("/purchase-credits")}>
                   Purchase Credits

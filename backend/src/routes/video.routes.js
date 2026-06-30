@@ -4,11 +4,21 @@ import auth from "../middlewares/auth.js";
 import Video from "../models/video.model.js";
 import User from "../models/user.model.js";
 import Access from "../models/access.model.js";
-import { uploadToCloudinary } from "../utils/cloudinary.js";
+import { uploadToCloudinary, removeLocalFileIfExists } from "../utils/cloudinary.js";
+import { ensureUploadDir, videosUploadDir } from "../utils/uploadPaths.js";
 
 const router = express.Router();
 
-const upload = multer({ storage: multer.memoryStorage() });
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => {
+      cb(null, ensureUploadDir(videosUploadDir));
+    },
+    filename: (req, file, cb) => {
+      cb(null, `${Date.now()}-${file.originalname}`);
+    },
+  }),
+});
 
 //  PUBLIC FEED
 router.get("/", async (req, res) => {
@@ -54,11 +64,13 @@ router.post("/", auth, upload.single("video"), async (req, res) => {
         ? Math.floor(parsedCost)
         : 5;
 
-    const result = await uploadToCloudinary(req.file.buffer, {
+    const result = await uploadToCloudinary(req.file.path, {
       folder: "skill-exchange/videos",
       resource_type: "video",
       public_id: `${Date.now()}-${req.file.originalname.replace(/\.[^.]+$/, "")}`,
+      originalname: req.file.originalname,
     });
+    removeLocalFileIfExists(req.file.path);
 
     await Video.create({
       title: title.trim(),
@@ -107,12 +119,14 @@ router.post("/watch/:id", auth, async (req, res) => {
     userId: req.userId,
     videoId: video._id,
   });
+  const purchased = user.purchasedSkills?.some(
+    (id) => String(id) === String(video._id),
+  );
 
-  if (already) {
+  if (already || purchased) {
     await User.findByIdAndUpdate(req.userId, {
       $addToSet: { purchasedSkills: video._id },
     });
-    // allow without deduction
     return res.json({
       path: videoPath,
       credits: user.credits,

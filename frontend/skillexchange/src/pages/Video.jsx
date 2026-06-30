@@ -1,6 +1,6 @@
 import { useNavigate, useParams } from "react-router-dom";
 import { useEffect, useState } from "react";
-import api, { API_ORIGIN } from "../api";
+import api, { resolveMediaUrl } from "../api";
 import Navbar from "../components/Navbar";
 import Footer from "../components/footer";
 import Button from "../components/ui/Button";
@@ -13,8 +13,11 @@ import "./Video.css";
 export default function Video() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { user, refreshUser, updateCredits } = useUser();
+  const { user, refreshUser, updateCredits, loadingUser } = useUser();
   const [path, setPath] = useState("");
+  const [hasAccess, setHasAccess] = useState(false);
+  const [isOwner, setIsOwner] = useState(false);
+  const [checkingAccess, setCheckingAccess] = useState(true);
   const [title, setTitle] = useState("Video Player");
   const [description, setDescription] = useState("Unlock to start learning this skill.");
   const [cost, setCost] = useState(5);
@@ -38,6 +41,45 @@ export default function Video() {
     loadVideo();
   }, [id]);
 
+  useEffect(() => {
+    const loadAccess = async () => {
+      if (!id || loadingUser) {
+        return;
+      }
+
+      setCheckingAccess(true);
+      setPath("");
+      setHasAccess(false);
+      setIsOwner(false);
+
+      if (!user) {
+        setCheckingAccess(false);
+        return;
+      }
+
+      try {
+        const accessRes = await api.get(`/user/content-access/video/${id}`);
+        const unlocked = Boolean(accessRes.data?.hasAccess);
+        setHasAccess(unlocked);
+        setIsOwner(Boolean(accessRes.data?.isOwner));
+
+        if (unlocked) {
+          const watchRes = await api.post(`/videos/watch/${id}`);
+          setPath(resolveMediaUrl(watchRes.data.path));
+          if (typeof watchRes.data.credits === "number") {
+            updateCredits(watchRes.data.credits);
+          }
+        }
+      } catch {
+        setHasAccess(false);
+      } finally {
+        setCheckingAccess(false);
+      }
+    };
+
+    loadAccess();
+  }, [id, loadingUser, user, updateCredits]);
+
   const play = async () => {
     setLoading(true);
     setError("");
@@ -52,7 +94,8 @@ export default function Video() {
       }
       const res = await api.post(`/videos/watch/${id}`);
       await refreshUser();
-      setPath(`${API_ORIGIN}/${res.data.path}`);
+      setPath(resolveMediaUrl(res.data.path));
+      setHasAccess(true);
       setTitle(res.data.title || "Video Unlocked");
       setDescription(res.data.description || "Enjoy the lesson.");
       if (unlockRes.data?.rewardMessage) {
@@ -86,6 +129,8 @@ export default function Video() {
           <div className="player-wrap">
             {path ? (
               <video controls src={path} className="video-element" />
+            ) : checkingAccess ? (
+              <div className="video-placeholder">Loading...</div>
             ) : (
               <div className="video-placeholder">Preview locked</div>
             )}
@@ -95,7 +140,7 @@ export default function Video() {
             <p className="muted-text">{description}</p>
             {statusMessage && <p className="success-text">{statusMessage}</p>}
             {error && <p className="error-text">{error}</p>}
-            {!path && (
+            {!path && !checkingAccess && (
               <div className="video-actions">
                 <Button onClick={() => setShowModal(true)} disabled={loading}>
                   {loading ? "Unlocking..." : "Unlock & Play"}
@@ -107,7 +152,13 @@ export default function Video() {
                 )}
               </div>
             )}
-            {path && <p className="muted-text">Credits were deducted only once for this unlock.</p>}
+            {path && hasAccess && (
+              <p className="muted-text">
+                {isOwner
+                  ? "This is your uploaded video."
+                  : "You already unlocked this video. Credits were deducted only once."}
+              </p>
+            )}
           </div>
         </Card>
       </main>

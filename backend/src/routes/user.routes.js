@@ -1,5 +1,6 @@
 import express from "express";
 import multer from "multer";
+import path from "path";
 import auth from "../middlewares/auth.js";
 import User from "../models/user.model.js";
 import Video from "../models/video.model.js";
@@ -7,10 +8,20 @@ import Notes from "../models/notes.model.js";
 import Access from "../models/access.model.js";
 import NoteAccess from "../models/noteAccess.model.js";
 import { randomInt } from "crypto";
-import { uploadToCloudinary } from "../utils/cloudinary.js";
+import { uploadToCloudinary, removeLocalFileIfExists } from "../utils/cloudinary.js";
+import { ensureUploadDir, uploadsRoot } from "../utils/uploadPaths.js";
 
 const router = express.Router();
-const upload = multer({ storage: multer.memoryStorage() });
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => {
+      cb(null, ensureUploadDir(path.join(uploadsRoot, "profile-pictures")));
+    },
+    filename: (req, file, cb) => {
+      cb(null, `${Date.now()}-${file.originalname}`);
+    },
+  }),
+});
 
 router.get("/profile", auth, async (req, res) => {
   try {
@@ -57,6 +68,52 @@ router.get("/purchases", auth, async (req, res) => {
     });
   } catch (err) {
     return res.status(500).json({ message: "Server error" });
+  }
+});
+
+router.get("/content-access/:contentType/:contentId", auth, async (req, res) => {
+  try {
+    const { contentType, contentId } = req.params;
+    if (!["video", "doc"].includes(contentType) || !contentId) {
+      return res.status(400).json({ message: "Invalid access request" });
+    }
+
+    const isVideo = contentType === "video";
+    const Model = isVideo ? Video : Notes;
+    const AccessModel = isVideo ? Access : NoteAccess;
+    const purchasedField = isVideo ? "purchasedSkills" : "purchasedDocs";
+    const idField = isVideo ? "videoId" : "noteId";
+
+    const content = await Model.findById(contentId);
+    if (!content) {
+      return res.status(404).json({ message: "Content not found" });
+    }
+
+    const user = await User.findById(req.userId).select(
+      "purchasedSkills purchasedDocs",
+    );
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const ownerId =
+      content.uploadedBy?.toString?.() || content.uploadedby?.toString?.();
+    const isOwner = ownerId === req.userId;
+    const purchased = user[purchasedField]?.some(
+      (id) => String(id) === String(contentId),
+    );
+    const existingAccess = await AccessModel.findOne({
+      userId: req.userId,
+      [idField]: contentId,
+    });
+
+    return res.json({
+      hasAccess: isOwner || purchased || Boolean(existingAccess),
+      isOwner,
+      purchased: purchased || Boolean(existingAccess),
+    });
+  } catch (err) {
+    return res.status(500).json({ message: "Unable to check access" });
   }
 });
 
@@ -293,11 +350,13 @@ router.post(
           .json({ message: "Please choose a profile picture" });
       }
 
-      const result = await uploadToCloudinary(req.file.buffer, {
+      const result = await uploadToCloudinary(req.file.path, {
         folder: "skill-exchange/profile-pictures",
         resource_type: "image",
         public_id: `${Date.now()}-${req.file.originalname.replace(/\.[^.]+$/, "")}`,
+        originalname: req.file.originalname,
       });
+      removeLocalFileIfExists(req.file.path);
 
       const user = await User.findById(req.userId);
       if (!user) {

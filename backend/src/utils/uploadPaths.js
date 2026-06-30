@@ -18,3 +18,13 @@ export function ensureUploadDir(dirPath) {
 export function buildUploadPath(...parts) {
   return parts.join("/").replaceAll("\\", "/");
 }
+
+export function resolveStoredUploadPath(storedPath) {
+  const normalized = String(storedPath || "").replaceAll("\\", "/");
+  if (/^https?:\/\//i.test(normalized)) {
+    return null;
+  }
+
+  const relative = normalized.replace(/^\/?uploads\/?/, "");
+  return path.join(uploadsRoot, relative);
+}

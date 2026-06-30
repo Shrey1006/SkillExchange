@@ -5,6 +5,19 @@ const API_BASE_URL =
 
 export const API_ORIGIN = API_BASE_URL.replace(/\/api\/?$/, "");
 
+export function resolveMediaUrl(storedPath) {
+  if (!storedPath) {
+    return "";
+  }
+
+  const normalized = String(storedPath).replaceAll("\\", "/");
+  if (/^https?:\/\//i.test(normalized)) {
+    return normalized;
+  }
+
+  return `${API_ORIGIN}/${normalized.replace(/^\/+/, "")}`;
+}
+
 const api = axios.create({
   baseURL: API_BASE_URL,
 });

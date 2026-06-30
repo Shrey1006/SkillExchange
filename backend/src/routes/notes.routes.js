@@ -7,68 +7,104 @@ import auth from "../middlewares/auth.js";
 import Notes from "../models/notes.model.js";
 import User from "../models/user.model.js";
 import NoteAccess from "../models/noteAccess.model.js";
-import { uploadToCloudinary } from "../utils/cloudinary.js";
-
-const backendRoot = path.resolve(
-  path.dirname(new URL(import.meta.url).pathname),
-  "..",
-  "..",
-  "..",
-);
+import { uploadToCloudinary, removeLocalFileIfExists } from "../utils/cloudinary.js";
+import {
+  ensureUploadDir,
+  notesUploadDir,
+  resolveStoredUploadPath,
+} from "../utils/uploadPaths.js";
 
 const router = express.Router();
 
-const upload = multer({ storage: multer.memoryStorage() });
-
-router.post("/", auth, upload.single("notes"), async (req, res) => {
-  try {
-    const { title, cost } = req.body;
-    if (!title?.trim()) {
-      return res.status(400).json({ message: "Title is required" });
-    }
-
-    if (!req.file) {
-      return res
-        .status(400)
-        .json({ message: "Please choose a notes file to upload" });
-    }
-
-    const parsedCost = Number(cost);
-    const safeCost =
-      Number.isFinite(parsedCost) && parsedCost > 0
-        ? Math.floor(parsedCost)
-        : 3;
-
-    const result = await uploadToCloudinary(req.file.buffer, {
-      folder: "skill-exchange/notes",
-      resource_type: "raw",
-      public_id: `${Date.now()}-${req.file.originalname.replace(/\.[^.]+$/, "")}`,
-    });
-
-    const note = await Notes.create({
-      title: title.trim(),
-      cost: safeCost,
-      filepath: result.secure_url,
-      filename: req.file.originalname,
-      uploadedBy: req.userId,
-    });
-
-    const user = await User.findByIdAndUpdate(
-      req.userId,
-      { $inc: { credits: 20 } },
-      { new: true },
-    );
-
-    return res.json({
-      message: "Notes uploaded - gained 20 credits",
-      credits: user?.credits ?? 0,
-      note,
-    });
-  } catch (err) {
-    console.error("Notes upload error:", err);
-    return res.status(500).json({ message: "Notes upload failed" });
-  }
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => {
+      cb(null, ensureUploadDir(notesUploadDir));
+    },
+    filename: (req, file, cb) => {
+      cb(null, `${Date.now()}-${file.originalname}`);
+    },
+  }),
 });
+
+router.post(
+  "/",
+  auth,
+  (req, res, next) => {
+    upload.single("notes")(req, res, (err) => {
+      if (err) {
+        console.error("Notes upload multer error:", err);
+        return res.status(400).json({
+          message: "File upload failed",
+          error: err.message,
+        });
+      }
+      next();
+    });
+  },
+  async (req, res) => {
+    try {
+      console.log("notes upload request", {
+        path: req.path,
+        body: req.body,
+        file: req.file,
+        userId: req.userId,
+      });
+      const { title, cost } = req.body;
+      if (!title?.trim()) {
+        return res.status(400).json({ message: "Title is required" });
+      }
+
+      if (!req.file) {
+        return res
+          .status(400)
+          .json({ message: "Please choose a notes file to upload" });
+      }
+
+      const parsedCost = Number(cost);
+      const safeCost =
+        Number.isFinite(parsedCost) && parsedCost > 0
+          ? Math.floor(parsedCost)
+          : 3;
+
+      const filename = req.file.originalname;
+      const result = await uploadToCloudinary(req.file.path, {
+        folder: "skill-exchange/notes",
+        resource_type: "raw",
+        public_id: `${Date.now()}-${filename.replace(/\.[^.]+$/, "")}`,
+        originalname: filename,
+      });
+      removeLocalFileIfExists(req.file.path);
+
+      const note = await Notes.create({
+        title: title.trim(),
+        cost: safeCost,
+        filepath: result.secure_url,
+        filename,
+        uploadedBy: req.userId,
+      });
+
+      const user = await User.findByIdAndUpdate(
+        req.userId,
+        { $inc: { credits: 20 } },
+        { new: true },
+      );
+
+      return res.json({
+        message: "Notes uploaded - gained 20 credits",
+        credits: user?.credits ?? 0,
+        note,
+      });
+    } catch (err) {
+      console.error("Notes upload error:", err);
+      return res.status(500).json({
+        message: "Notes upload failed",
+        error: err?.message || "Unknown error",
+        stack: err?.stack || "",
+      });
+    }
+  },
+);
 
 router.get("/", async (req, res) => {
   const notes = await Notes.find().populate("uploadedBy", "name email");
@@ -119,9 +155,9 @@ router.post("/download/:id", auth, async (req, res) => {
       return res.send(Buffer.from(await remoteResponse.arrayBuffer()));
     }
 
-    const absolutePath = path.resolve(backendRoot, notePath);
+    const absolutePath = resolveStoredUploadPath(notePath);
 
-    if (!fs.existsSync(absolutePath)) {
+    if (!absolutePath || !fs.existsSync(absolutePath)) {
       return res.status(404).json({ message: "File missing on server" });
     }
 

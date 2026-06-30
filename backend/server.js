@@ -37,10 +37,24 @@ app.get("/", (req, res) => {
 });
 app.use("/api/videos", videoroutes);
 app.use("/uploads", express.static(uploadsRoot));
-app.use("/api/notes", notesroutes);
+app.use(
+  "/api/notes",
+  (req, res, next) => {
+    console.log("notes route hit", req.method, req.path);
+    next();
+  },
+  notesroutes,
+);
 app.use("/api/auth", authroutes);
 app.use("/api/user", userroutes);
 app.use("/api/payments", paymentroutes);
+
+app.use((err, req, res, next) => {
+  console.error("Unhandled API error:", err);
+  res.status(err.status || 500).json({
+    message: err.message || "Internal server error",
+  });
+});
 
 // Serve frontend static files
 const frontendBuildPath = path.join(

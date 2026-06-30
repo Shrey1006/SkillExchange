@@ -5,7 +5,7 @@ import pic from "../assets/profile.svg";
 import Input from "../components/ui/Input";
 import Button from "../components/ui/Button";
 import Card from "../components/ui/Card";
-import api from "../api";
+import api, { resolveMediaUrl } from "../api";
 import "./Profile.css";
 
 export default function Profile() {
@@ -105,7 +105,7 @@ export default function Profile() {
         <Card className="profile-card">
           <div className="profile-left">
             <img
-              src={profile.profilePicture || pic}
+              src={resolveMediaUrl(profile.profilePicture) || pic}
               alt="Profile"
               className="profile-pic"
             />
